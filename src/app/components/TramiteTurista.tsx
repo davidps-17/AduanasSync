@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { validarRut, formatRut, MSG_RUT_INVALIDO, validarFechaNacimiento, validarFecha, calcularEdad, hoyISO, fechaHaceAños } from '../utils/rut';
 import { imprimirDeclaracion, ahora } from '../utils/print';
+import { guardarTramite } from '../utils/tramitesStore';
 import { PAISES_MUNDO } from '../utils/countries';
 import { DocumentScanner, type ScanStatus, type DatosEscaneados } from './ui/DocumentScanner';
 import { DatePicker } from './ui/DatePicker';
@@ -995,7 +996,37 @@ export function TramiteTurista({ rut, onVolver }: { rut: string; onVolver: () =>
     setScanStatus('scanned');
   };
 
-  const enviar = () => { setFolio(`TUR-2026-${Math.floor(10000 + Math.random() * 90000)}`); setPaso(7); sessionStorage.removeItem(AUTOSAVE_KEY); };
+  const enviar = () => {
+    const num = `TUR-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+    const nombreCompleto = `${personal.primerNombre} ${personal.apellidoPaterno}`.trim() || 'Viajero';
+    guardarTramite({
+      numero: num,
+      tipo: 'Declaración de Turista',
+      descripcion: `Declaración de viajero — ${nombreCompleto}${menores.length ? ` + ${menores.length} menor(es)` : ''}${mascotas.length ? ` + ${mascotas.length} mascota(s)` : ''}`,
+      estado: 'en_proceso',
+      fechaIngreso: hoyISO(),
+      fechaActualizacion: hoyISO(),
+      aduana: viaje.origen ? `Aduana Internacional — proc. ${viaje.origen}` : 'Aduana Internacional',
+      valorUSD: articulos.length
+        ? String(articulos.reduce((acc, a) => acc + (parseFloat(a.valorUSD) || 0), 0))
+        : '0',
+      documentos: [
+        `Documento de ${personal.tipoDoc === 'rut' ? 'identidad (RUT)' : 'viaje (Pasaporte)'}: ${personal.documento}`,
+        ...(menores.length ? [`Documentación de ${menores.length} menor(es)`] : []),
+        ...(mascotas.length ? [`Certificado sanitario SAG (${mascotas.length} mascota(s))`] : []),
+        ...(articulos.length ? [`Declaración de ${articulos.length} bien(es)`] : []),
+      ],
+      pasos: [
+        { label: 'Declaración enviada', completado: true, fecha: hoyISO(), descripcion: 'Declaración registrada en el sistema AduanaSync.' },
+        { label: 'Revisión en punto de control', completado: false, fecha: null, descripcion: 'Pendiente de presentación del folio al arribar a Chile.' },
+        { label: 'Cierre de trámite', completado: false, fecha: null, descripcion: 'Se cerrará una vez completado el control en frontera.' },
+      ],
+      rut,
+    });
+    setFolio(num);
+    setPaso(7);
+    sessionStorage.removeItem(AUTOSAVE_KEY);
+  };
   const pct = ((paso - 1) / (PASOS.length - 1)) * 100;
 
   return (
