@@ -1,4 +1,5 @@
 import { AlertCircle, ArrowLeft, ChevronRight, Info, CheckCircle2, Download, Printer } from 'lucide-react';
+import { imprimirDeclaracion, ahora } from '../../utils/print';
 
 /* ── Campos ── */
 export function Campo({ label, required, error, children }: {
@@ -74,6 +75,19 @@ export function TarjetaRevision({ titulo, icon, filas }: { titulo: string; icon:
 }
 
 export function Confirmacion({ folio, tipo, pasos, onVolver }: { folio: string; tipo: string; pasos: string[]; onVolver: () => void }) {
+  const exportarPDF = () => {
+    imprimirDeclaracion({
+      folio,
+      titulo: tipo,
+      subtitulo: 'Comprobante de trámite — AduanaSync',
+      fechaHora: ahora(),
+      secciones: [
+        { titulo: 'Detalle del trámite', filas: [['Tipo de trámite', tipo], ['Estado', 'Registrado en el sistema aduanero']] },
+      ],
+      notas: pasos,
+    });
+  };
+
   return (
     <div className="text-center py-4 space-y-6">
       <div className="flex justify-center">
@@ -95,8 +109,8 @@ export function Confirmacion({ folio, tipo, pasos, onVolver }: { folio: string; 
         {pasos.map((p, i) => <p key={i} className="text-xs text-amber-700">{i + 1}. {p}</p>)}
       </div>
       <div className="flex gap-3 justify-center">
-        <button className="flex items-center gap-2 text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2.5 rounded-lg transition-colors"><Download className="w-4 h-4" /> Descargar PDF</button>
-        <button className="flex items-center gap-2 text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2.5 rounded-lg transition-colors"><Printer className="w-4 h-4" /> Imprimir</button>
+        <button onClick={exportarPDF} className="flex items-center gap-2 text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2.5 rounded-lg transition-colors"><Download className="w-4 h-4" /> Descargar PDF</button>
+        <button onClick={exportarPDF} className="flex items-center gap-2 text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2.5 rounded-lg transition-colors"><Printer className="w-4 h-4" /> Imprimir</button>
       </div>
       <button onClick={onVolver} className="text-sm text-[#1a5276] hover:underline">Volver al portal principal</button>
     </div>

@@ -18,7 +18,18 @@ export interface DatosDocumento {
 
 /** Abre una ventana con el documento formateado y dispara impresión / guardado como PDF */
 export function imprimirDeclaracion(datos: DatosDocumento): void {
-  const qrData = encodeURIComponent(`ADUANASYNC|${datos.folio}|${datos.fechaHora}|${datos.rut ?? ''}`);
+  // Payload de verificación: folio, tipo, fecha y RUT codificados en la propia URL,
+  // así el QR abre una pantalla de verificación real dentro de la misma app,
+  // sin necesitar servidor ni base de datos.
+  const payload = {
+    folio: datos.folio,
+    titulo: datos.titulo,
+    fecha: datos.fechaHora,
+    rut: datos.rut ?? '',
+  };
+  const payloadB64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  const verifyUrl = `${window.location.origin}${window.location.pathname}?verificar=${payloadB64}`;
+  const qrData = encodeURIComponent(verifyUrl);
 
   const seccionHTML = (s: SeccionDoc) => `
     <div class="sec">
@@ -140,6 +151,7 @@ export function imprimirDeclaracion(datos: DatosDocumento): void {
       <div class="q-sub">Escanee el código QR para verificar la autenticidad de este documento en el sistema AduanaSync.</div>
       <div class="q-folio">${datos.folio}</div>
       <div class="q-sub" style="margin-top:4px">Fecha: ${datos.fechaHora}</div>
+      <div class="q-sub no-print" style="margin-top:6px;word-break:break-all"><a href="${verifyUrl}" style="color:#1a5276">${verifyUrl}</a></div>
     </div>
   </div>
 
@@ -177,7 +189,7 @@ export function imprimirDeclaracion(datos: DatosDocumento): void {
   <script>
     try {
       var qr = qrcode(0, 'M');
-      qr.addData('ADUANASYNC:${datos.folio}:${encodeURIComponent(datos.fechaHora)}:${datos.rut ?? ''}');
+      qr.addData(${JSON.stringify(verifyUrl)});
       qr.make();
       document.getElementById('qr-container').innerHTML = qr.createSvgTag(3, 0);
     } catch(e) {

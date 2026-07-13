@@ -6,6 +6,7 @@ import {
   Save,
 } from 'lucide-react';
 import { validarRut, formatRut, MSG_RUT_INVALIDO, validarFechaNacimiento, validarFecha, calcularEdad, hoyISO, fechaHaceAños } from '../utils/rut';
+import { imprimirDeclaracion, ahora } from '../utils/print';
 import { PAISES_MUNDO } from '../utils/countries';
 import { DocumentScanner, type ScanStatus, type DatosEscaneados } from './ui/DocumentScanner';
 import { DatePicker } from './ui/DatePicker';
@@ -850,7 +851,57 @@ function PasoRevision({ personal, menores, mascotas, viaje, articulos, onSubmit,
 /* ══════════════════════════════════════════════════
    PASO 7 — Confirmación
 ══════════════════════════════════════════════════ */
-function PasoConfirmacion({ folio, menores, mascotas, onVolver }: { folio: string; menores: Menor[]; mascotas: Mascota[]; onVolver: () => void }) {
+function PasoConfirmacion({ folio, personal, menores, mascotas, viaje, articulos, onVolver }: {
+  folio: string; personal: DatosPersonales; menores: Menor[]; mascotas: Mascota[];
+  viaje: DatosViaje; articulos: Articulo[]; onVolver: () => void;
+}) {
+  const exportarPDF = () => {
+    imprimirDeclaracion({
+      folio,
+      titulo: 'Declaración de Viajero / Turista',
+      subtitulo: 'Servicio Nacional de Aduanas de Chile',
+      fechaHora: ahora(),
+      rut: personal.tipoDoc === 'rut' ? personal.documento : undefined,
+      secciones: [
+        {
+          titulo: 'Datos del viajero',
+          filas: [
+            ['Nombre completo', `${personal.primerNombre} ${personal.segundoNombre} ${personal.apellidoPaterno} ${personal.apellidoMaterno}`.replace(/\s+/g, ' ').trim()],
+            ['Documento', `${personal.tipoDoc === 'rut' ? 'RUT' : 'Pasaporte'}: ${personal.documento}`],
+            ['Nacionalidad', personal.nacionalidad],
+            ['Fecha de nacimiento', personal.fechaNacimiento],
+          ],
+        },
+        {
+          titulo: 'Datos del viaje',
+          filas: [
+            ['Origen', viaje.origen], ['Vuelo', viaje.vuelo],
+            ['Fecha de llegada', viaje.fechaLlegada], ['Días de estadía', viaje.diasEstadia],
+            ['Motivo del viaje', viaje.motivoViaje], ['Aerolínea', viaje.aerolinea],
+          ],
+        },
+        ...(menores.length > 0 ? [{
+          titulo: `Menores que viajan (${menores.length})`,
+          filas: menores.map((m, i): [string, string] => [`Menor ${i + 1}`, `${m.primerNombre} ${m.apellidoPaterno} — ${m.tipoDoc === 'rut' ? 'RUT' : 'Pasaporte'} ${m.documento}`]),
+        }] : []),
+        ...(mascotas.length > 0 ? [{
+          titulo: `Mascotas declaradas (${mascotas.length})`,
+          filas: mascotas.map((m): [string, string] => [m.nombre || 'Mascota', `${m.especie}${m.raza ? ' · ' + m.raza : ''} — Microchip: ${m.microchip || 'N/A'}`]),
+        }] : []),
+        ...(articulos.length > 0 ? [{
+          titulo: `Bienes declarados (${articulos.length})`,
+          filas: articulos.map((a, i): [string, string] => [`Artículo ${i + 1}`, `${a.descripcion || '—'} (${a.cantidad || '1'} · USD ${a.valorUSD || '0'})`]),
+        }] : []),
+      ],
+      notas: [
+        'Diríjase al mesón de Aduanas con este folio y documentos.',
+        ...(menores.length > 0 ? ['Presente los documentos de los menores y permisos notariales si aplica.'] : []),
+        ...(mascotas.length > 0 ? ['Diríjase al mesón del SAG con el certificado sanitario y documentación de cada mascota.'] : []),
+        'Si declaró bienes, pague aranceles en caja antes de retirar equipaje.',
+      ],
+    });
+  };
+
   return (
     <div className="text-center py-4 space-y-5">
       <div className="flex justify-center">
@@ -875,8 +926,8 @@ function PasoConfirmacion({ folio, menores, mascotas, onVolver }: { folio: strin
         <p className="text-xs text-amber-700">{menores.length > 0 || mascotas.length > 0 ? '4.' : '2.'} Si declaró bienes, pague aranceles en caja antes de retirar equipaje.</p>
       </div>
       <div className="flex gap-3 justify-center">
-        <button className="flex items-center gap-2 text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2.5 rounded-xl transition-colors"><Download className="w-4 h-4" /> PDF</button>
-        <button className="flex items-center gap-2 text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2.5 rounded-xl transition-colors"><Printer className="w-4 h-4" /> Imprimir</button>
+        <button onClick={exportarPDF} className="flex items-center gap-2 text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2.5 rounded-xl transition-colors"><Download className="w-4 h-4" /> PDF</button>
+        <button onClick={exportarPDF} className="flex items-center gap-2 text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2.5 rounded-xl transition-colors"><Printer className="w-4 h-4" /> Imprimir</button>
       </div>
       <button onClick={onVolver} className="text-sm text-[#1a5276] hover:underline">Volver al portal</button>
     </div>
@@ -1014,7 +1065,7 @@ export function TramiteTurista({ rut, onVolver }: { rut: string; onVolver: () =>
           {paso === 4 && <PasoViaje data={viaje} onChange={setViaje} onNext={() => setPaso(5)} onBack={() => setPaso(3)} />}
           {paso === 5 && <PasoBienes articulos={articulos} menores={menores} onChange={setArticulos} onNext={() => setPaso(6)} onBack={() => setPaso(4)} />}
           {paso === 6 && <PasoRevision personal={personal} menores={menores} mascotas={mascotas} viaje={viaje} articulos={articulos} onSubmit={enviar} onBack={() => setPaso(5)} />}
-          {paso === 7 && <PasoConfirmacion folio={folio} menores={menores} mascotas={mascotas} onVolver={onVolver} />}
+          {paso === 7 && <PasoConfirmacion folio={folio} personal={personal} menores={menores} mascotas={mascotas} viaje={viaje} articulos={articulos} onVolver={onVolver} />}
         </div>
         {paso < 7 && <p className="text-center text-[10px] text-gray-400 dark:text-gray-600 mt-4">© 2026 Servicio Nacional de Aduanas de Chile</p>}
       </div>

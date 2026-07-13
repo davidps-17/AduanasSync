@@ -3,6 +3,7 @@ import { Building2, ShieldAlert, CheckCircle2, Sun, Moon } from 'lucide-react';
 import { LoginForm } from './components/LoginForm';
 import { Dashboard } from './components/Dashboard';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+import { VerificacionDocumento, decodificarVerificacion } from './components/VerificacionDocumento';
 
 function ThemeToggle() {
   const { isDark, toggle } = useTheme();
@@ -21,6 +22,20 @@ function ThemeToggle() {
 
 function AppInner() {
   const [session, setSession] = useState<{ rut: string } | null>(null);
+
+  /* ── Pantalla de verificación de documento (link del QR) ── */
+  const params = new URLSearchParams(window.location.search);
+  const verificarParam = params.get('verificar');
+  if (verificarParam !== null) {
+    const datos = decodificarVerificacion(verificarParam);
+    return (
+      <VerificacionDocumento
+        datos={datos}
+        valido={datos !== null}
+        onVolver={() => { window.history.replaceState({}, '', window.location.pathname); window.location.reload(); }}
+      />
+    );
+  }
 
   if (session) {
     return <Dashboard rut={session.rut} onLogout={() => setSession(null)} />;
