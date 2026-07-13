@@ -1,8 +1,23 @@
 import { useState } from 'react';
-import { Building2, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { Building2, ShieldAlert, CheckCircle2, Sun, Moon } from 'lucide-react';
 import { LoginForm } from './components/LoginForm';
 import { Dashboard } from './components/Dashboard';
-import { ThemeProvider } from './contexts/ThemeContext';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+
+function ThemeToggle() {
+  const { isDark, toggle } = useTheme();
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-label={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+      title={isDark ? 'Modo claro' : 'Modo oscuro'}
+      className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 flex items-center justify-center text-white transition-colors backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-white/40"
+    >
+      {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+    </button>
+  );
+}
 
 function AppInner() {
   const [session, setSession] = useState<{ rut: string } | null>(null);
@@ -12,7 +27,8 @@ function AppInner() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0f2d45] via-[#1a5276] to-[#0f2d45] flex items-center justify-center p-4 sm:p-6">
+    <div className="min-h-screen bg-gradient-to-br from-[#0f2d45] via-[#1a5276] to-[#0f2d45] dark:from-[#050d15] dark:via-[#0d2438] dark:to-[#050d15] flex items-center justify-center p-4 sm:p-6 relative">
+      <ThemeToggle />
       <div className="w-full max-w-md">
 
         {/* ── Advertencia — PROMINENTE Y VISIBLE ARRIBA ── */}
