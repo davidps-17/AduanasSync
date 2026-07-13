@@ -7,6 +7,7 @@ import {
   Monitor, Maximize2, Timer,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import { listarTramites, formatearFechaCorta, EVENTO_ACTUALIZACION, type TramiteGuardado } from '../utils/tramitesStore';
 import { TramiteTurista }          from './TramiteTurista';
 import { TramiteImportaciones }    from './TramiteImportaciones';
 import { TramiteExportaciones }    from './TramiteExportaciones';
@@ -80,6 +81,20 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
   const [actividadNumero, setActividadNumero] = useState('');
   const { isDark, toggle: toggleTheme } = useTheme();
 
+  /* ── Trámites reales enviados por el usuario (guardados en localStorage) ── */
+  const [tramitesReales, setTramitesReales] = useState<TramiteGuardado[]>(() => listarTramites(rut));
+
+  useEffect(() => {
+    const sync = () => setTramitesReales(listarTramites(rut));
+    sync();
+    window.addEventListener(EVENTO_ACTUALIZACION, sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener(EVENTO_ACTUALIZACION, sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, [rut]);
+
   /* ── Modo Tótem / Kiosk ── */
   const [kiosk, setKiosk]             = useState(false);
   const [inactividad, setInactividad] = useState(300); // 5 minutos
@@ -118,6 +133,15 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
   const ir = (v: Vista) => { resetInactividad(); setVista(v); };
   const volver = () => { resetInactividad(); setVista('dashboard'); };
 
+  /* ── Actividad Reciente: trámites reales primero, luego los de demostración ── */
+  const actividadCombinada = [
+    ...tramitesReales.map(t => ({
+      num: t.numero, tipo: t.tipo, estado: t.estado,
+      fecha: formatearFechaCorta(t.fechaIngreso),
+    })),
+    ...actividad,
+  ];
+
   const handleSearch = (q: string) => {
     setSearchQuery(q);
     setVista('busqueda');
@@ -155,7 +179,7 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
   if (vista === 'aduana-informa')       return <AduanaInforma          rut={rut} onVolver={volver} />;
   if (vista === 'actividad-detalle')    return <ActividadDetalle numero={actividadNumero} rut={rut} onVolver={volver} />;
   if (vista === 'busqueda')            return <SearchResults query={searchQuery} rut={rut} onVolver={volver} />;
-  if (vista === 'ver-todos')           return <VerTodos                rut={rut} onVolver={volver} />;
+  if (vista === 'ver-todos')           return <VerTodos                rut={rut} onVolver={volver} onSeleccionar={(v) => ir(v as Vista)} />;
   if (vista === 'centro-ayuda')        return <CentroAyuda             rut={rut} onVolver={volver} />;
 
   /* ── Dashboard ── */
@@ -340,7 +364,7 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
             <section className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm p-5">
               <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4">Actividad Reciente</p>
               <div className="space-y-2">
-                {actividad.map(a => {
+                {actividadCombinada.map(a => {
                   const cfg = estadoConfig[a.estado];
                   return (
                     <button key={a.num}

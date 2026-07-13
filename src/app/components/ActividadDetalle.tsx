@@ -1,5 +1,8 @@
+import { useState } from 'react';
 import { CheckCircle2, Clock, AlertTriangle, CreditCard, Package, PackageCheck, FileText, ArrowLeft, Download, Printer, Image as ImageIcon, MapPin, Calendar, Tag, DollarSign } from 'lucide-react';
 import { PageLayout } from './ui/PageLayout';
+import { obtenerTramite, type TramiteGuardado } from '../utils/tramitesStore';
+import { imprimirDeclaracion, ahora } from '../utils/print';
 
 type EstadoKey = 'en_proceso' | 'completado' | 'alerta' | 'pendiente';
 
@@ -112,8 +115,29 @@ const TRAMITES: Tramite[] = [
 
 interface Props { numero: string; rut: string; onVolver: () => void }
 
+const IMAGEN_GENERICA = 'https://images.unsplash.com/photo-1436491865332-7a61a109cc05?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&w=900';
+
+function adaptarTramiteReal(r: TramiteGuardado): Tramite {
+  return {
+    numero: r.numero,
+    tipo: r.tipo,
+    descripcion: r.descripcion,
+    estado: r.estado,
+    fechaIngreso: r.fechaIngreso,
+    fechaActualizacion: r.fechaActualizacion,
+    imagen: r.imagen || IMAGEN_GENERICA,
+    imagenAlt: r.imagenAlt || r.tipo,
+    aduana: r.aduana || '—',
+    valorUSD: r.valorUSD || '0',
+    documentos: r.documentos,
+    pasos: r.pasos,
+    alerta: r.alerta,
+  };
+}
+
 export function ActividadDetalle({ numero, rut, onVolver }: Props) {
-  const t = TRAMITES.find(x => x.numero === numero);
+  const real = obtenerTramite(numero);
+  const t = real ? adaptarTramiteReal(real) : TRAMITES.find(x => x.numero === numero);
   if (!t) return (
     <PageLayout titulo="Detalle de Trámite" rut={rut} onVolver={onVolver}>
       <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center">
@@ -123,9 +147,60 @@ export function ActividadDetalle({ numero, rut, onVolver }: Props) {
     </PageLayout>
   );
 
-  const cfg = estadoConfig[t.estado];
-  const completados = t.pasos.filter(p => p.completado).length;
-  const progreso    = Math.round((completados / t.pasos.length) * 100);
+  const [resuelto, setResuelto] = useState<false | 'subsanado' | 'pagado'>(false);
+  const hoyStr = new Date().toISOString().slice(0, 10);
+
+  let pasos = t.pasos;
+  let estado = t.estado;
+  let alerta = t.alerta;
+
+  if (resuelto === 'subsanado' && t.estado === 'alerta') {
+    estado = 'en_proceso';
+    alerta = undefined;
+    const idx = pasos.findIndex(p => !p.completado);
+    pasos = pasos.map((p, i) => i === idx
+      ? { ...p, completado: true, fecha: hoyStr, descripcion: 'Documentación recibida y validada. Observación subsanada.' }
+      : p);
+  }
+  if (resuelto === 'pagado' && t.estado === 'pendiente') {
+    estado = 'completado';
+    const idx = pasos.findIndex(p => !p.completado);
+    pasos = pasos.map((p, i) => i === idx
+      ? { ...p, completado: true, fecha: hoyStr, descripcion: 'Pago acreditado correctamente.' }
+      : p);
+  }
+
+  const cfg = estadoConfig[estado];
+  const completados = pasos.filter(p => p.completado).length;
+  const progreso    = Math.round((completados / pasos.length) * 100);
+
+  const exportarPDF = (documento?: string) => {
+    imprimirDeclaracion({
+      folio: t.numero,
+      titulo: t.tipo,
+      subtitulo: documento ? `Constancia de documento: ${documento}` : 'Comprobante de trámite — AduanaSync',
+      fechaHora: ahora(),
+      secciones: [
+        {
+          titulo: 'Detalle del trámite',
+          filas: [
+            ['Descripción', t.descripcion],
+            ['Aduana', t.aduana],
+            ['Fecha de ingreso', t.fechaIngreso],
+            ['Valor USD', `USD ${t.valorUSD}`],
+            ['Estado', cfg.label],
+          ],
+        },
+        ...(documento ? [] : [{
+          titulo: `Documentos asociados (${t.documentos.length})`,
+          filas: t.documentos.map((d, i): [string, string] => [`Documento ${i + 1}`, d]),
+        }]),
+      ],
+      notas: documento
+        ? [`Este documento forma parte del trámite ${t.numero}.`]
+        : pasos.map(p => `${p.completado ? '✔' : '○'} ${p.label}${p.fecha ? ' — ' + p.fecha : ''}`),
+    });
+  };
 
   return (
     <PageLayout titulo={`Detalle — ${t.numero}`} subtitulo={t.tipo} rut={rut} onVolver={onVolver}>
@@ -165,12 +240,32 @@ export function ActividadDetalle({ numero, rut, onVolver }: Props) {
         </div>
 
         {/* Alerta si la hay */}
-        {t.alerta && (
+        {alerta && (
           <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex gap-3">
             <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-semibold text-red-700 mb-0.5">Acción requerida</p>
-              <p className="text-xs text-red-600 leading-relaxed">{t.alerta}</p>
+              <p className="text-xs text-red-600 leading-relaxed">{alerta}</p>
+            </div>
+          </div>
+        )}
+
+        {resuelto === 'subsanado' && (
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex gap-3">
+            <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-green-700 mb-0.5">Observación subsanada</p>
+              <p className="text-xs text-green-600 leading-relaxed">El documento fue recibido. El trámite continúa su revisión.</p>
+            </div>
+          </div>
+        )}
+
+        {resuelto === 'pagado' && (
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex gap-3">
+            <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-green-700 mb-0.5">Pago confirmado</p>
+              <p className="text-xs text-green-600 leading-relaxed">El pago fue acreditado. El trámite se marcó como completado.</p>
             </div>
           </div>
         )}
@@ -179,19 +274,19 @@ export function ActividadDetalle({ numero, rut, onVolver }: Props) {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-gray-700">Estado del trámite</h3>
-            <span className="text-xs text-gray-400">{completados}/{t.pasos.length} etapas</span>
+            <span className="text-xs text-gray-400">{completados}/{pasos.length} etapas</span>
           </div>
 
           <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-6">
             <div className={`h-full rounded-full transition-all duration-700 ${
-              t.estado === 'completado' ? 'bg-green-500' :
-              t.estado === 'alerta'    ? 'bg-red-400' :
-              t.estado === 'pendiente' ? 'bg-amber-400' : 'bg-[#1a5276]'
+              estado === 'completado' ? 'bg-green-500' :
+              estado === 'alerta'    ? 'bg-red-400' :
+              estado === 'pendiente' ? 'bg-amber-400' : 'bg-[#1a5276]'
             }`} style={{ width: `${progreso}%` }} />
           </div>
 
           <div className="space-y-0">
-            {t.pasos.map((paso, i) => (
+            {pasos.map((paso, i) => (
               <div key={paso.label} className="flex gap-4 items-start">
                 <div className="flex flex-col items-center flex-shrink-0">
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center border-2 transition-colors ${
@@ -203,7 +298,7 @@ export function ActividadDetalle({ numero, rut, onVolver }: Props) {
                   }`}>
                     {paso.completado ? <CheckCircle2 className="w-4 h-4" /> : <span className="text-[10px] font-bold">{i + 1}</span>}
                   </div>
-                  {i < t.pasos.length - 1 && (
+                  {i < pasos.length - 1 && (
                     <div className={`w-0.5 h-10 mt-1 ${paso.completado ? 'bg-green-200' : 'bg-gray-100'}`} />
                   )}
                 </div>
@@ -235,7 +330,7 @@ export function ActividadDetalle({ numero, rut, onVolver }: Props) {
                   <FileText className="w-4 h-4 text-[#1a5276]" />
                 </div>
                 <span className="text-xs text-gray-700 flex-1">{doc}</span>
-                <button className="text-[10px] text-[#1a5276] font-medium hover:underline flex items-center gap-1">
+                <button onClick={() => exportarPDF(doc)} className="text-[10px] text-[#1a5276] font-medium hover:underline flex items-center gap-1">
                   <Download className="w-3.5 h-3.5" /> Descargar
                 </button>
               </div>
@@ -248,16 +343,16 @@ export function ActividadDetalle({ numero, rut, onVolver }: Props) {
           <button onClick={onVolver} className="flex items-center gap-2 text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2.5 rounded-xl transition-colors">
             <ArrowLeft className="w-4 h-4" /> Volver
           </button>
-          <button className="flex items-center gap-2 text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2.5 rounded-xl transition-colors">
+          <button onClick={() => exportarPDF()} className="flex items-center gap-2 text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 px-5 py-2.5 rounded-xl transition-colors">
             <Printer className="w-4 h-4" /> Imprimir
           </button>
-          {t.estado === 'pendiente' && (
-            <button className="flex-1 bg-[#1a5276] text-white text-sm font-medium py-2.5 rounded-xl hover:bg-[#143d5a] transition-colors flex items-center justify-center gap-2">
+          {estado === 'pendiente' && (
+            <button onClick={() => setResuelto('pagado')} className="flex-1 bg-[#1a5276] text-white text-sm font-medium py-2.5 rounded-xl hover:bg-[#143d5a] transition-colors flex items-center justify-center gap-2">
               <CreditCard className="w-4 h-4" /> Pagar ahora
             </button>
           )}
-          {t.estado === 'alerta' && (
-            <button className="flex-1 bg-red-600 text-white text-sm font-medium py-2.5 rounded-xl hover:bg-red-700 transition-colors flex items-center justify-center gap-2">
+          {estado === 'alerta' && (
+            <button onClick={() => setResuelto('subsanado')} className="flex-1 bg-red-600 text-white text-sm font-medium py-2.5 rounded-xl hover:bg-red-700 transition-colors flex items-center justify-center gap-2">
               <FileText className="w-4 h-4" /> Subsanar observación
             </button>
           )}
