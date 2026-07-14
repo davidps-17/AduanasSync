@@ -47,7 +47,6 @@ const MESES: Record<string, string> = {
   JUL: '07', AGO: '08', SEP: '09', SET: '09', OCT: '10', NOV: '11', DIC: '12',
 };
 
-/** Intenta extraer RUT, fecha de nacimiento y otros datos del texto crudo del OCR */
 /** Convierte "GONZALEZ" -> "Gonzalez" (capitaliza, sin adivinar tildes) */
 function capitalizar(palabra: string): string {
   if (!palabra) return '';
@@ -96,12 +95,14 @@ function parsearTexto(textoCrudo: string): DatosEscaneados {
     datos.tipoDoc = 'rut';
     datos.documento = rut[1].replace(/\s/g, '').replace('–', '-');
   } else {
+    // Fallback: patrón típico de N° de pasaporte (letras + dígitos)
     const pas = texto.match(/\b([A-Z]{1,2}\d{6,8})\b/);
     if (pas) { datos.tipoDoc = 'pasaporte'; datos.documento = pas[1]; }
   }
 
   // Fecha numérica DD-MM-AAAA / DD/MM/AAAA
   const fechaNum = texto.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})\b/);
+  // Fecha con mes en texto, ej "15 MAR 1985"
   const fechaMes = texto.match(/\b(\d{1,2})\s+([A-Z]{3,4})\.?\s+(\d{4})\b/);
 
   if (fechaNum) {
@@ -113,6 +114,8 @@ function parsearTexto(textoCrudo: string): DatosEscaneados {
     if (mes) datos.fechaNacimiento = `${y}-${mes}-${d.padStart(2, '0')}`;
   }
 
+  // Nacionalidad: si el texto no menciona claramente Chile y parece pasaporte,
+  // se deja en blanco para que la persona la complete.
   if (!/CHILE/.test(texto) && datos.tipoDoc === 'pasaporte') {
     datos.nacionalidad = '';
   }
@@ -220,8 +223,8 @@ export function DocumentScanner({ onScan, scanStatus, disabled }: Props) {
     // Para el OCR: recortar solo la zona del marco guía (mismo 80%x60% centrado
     // que se muestra en pantalla) para no confundir al lector con el fondo del
     // carnet/mesa, y aplicar escala de grises + contraste sobre ese recorte.
-    const cw = Math.round(c.width * 0.8);
-    const ch = Math.round(c.height * 0.6);
+    const cw = Math.round(c.width * 0.92);
+    const ch = Math.round(c.height * 0.78);
     const cx = Math.round((c.width - cw) / 2);
     const cy = Math.round((c.height - ch) / 2);
 
@@ -369,7 +372,7 @@ export function DocumentScanner({ onScan, scanStatus, disabled }: Props) {
                     )}
                     {/* Marco de escáner */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="relative w-4/5 h-3/5">
+                      <div className="relative w-[92%] h-[78%]">
                         {/* Esquinas animadas */}
                         {['top-0 left-0 border-t-4 border-l-4', 'top-0 right-0 border-t-4 border-r-4', 'bottom-0 left-0 border-b-4 border-l-4', 'bottom-0 right-0 border-b-4 border-r-4'].map((cls, i) => (
                           <div key={i} className={`absolute w-8 h-8 border-white rounded-sm ${cls}`} />

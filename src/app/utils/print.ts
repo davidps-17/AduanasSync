@@ -29,7 +29,6 @@ export function imprimirDeclaracion(datos: DatosDocumento): void {
   };
   const payloadB64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
   const verifyUrl = `${window.location.origin}${window.location.pathname}?verificar=${payloadB64}`;
-  const qrData = encodeURIComponent(verifyUrl);
 
   const seccionHTML = (s: SeccionDoc) => `
     <div class="sec">
@@ -151,7 +150,6 @@ export function imprimirDeclaracion(datos: DatosDocumento): void {
       <div class="q-sub">Escanee el código QR para verificar la autenticidad de este documento en el sistema AduanaSync.</div>
       <div class="q-folio">${datos.folio}</div>
       <div class="q-sub" style="margin-top:4px">Fecha: ${datos.fechaHora}</div>
-      <div class="q-sub no-print" style="margin-top:6px;word-break:break-all"><a href="${verifyUrl}" style="color:#1a5276">${verifyUrl}</a></div>
     </div>
   </div>
 

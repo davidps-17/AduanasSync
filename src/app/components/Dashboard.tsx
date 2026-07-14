@@ -152,6 +152,12 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
     ...actividad,
   ];
 
+  /* Conteo por estado para los badges de arriba (se actualiza solo con cada trámite nuevo) */
+  const conteo = actividadCombinada.reduce((acc, a) => {
+    acc[a.estado] = (acc[a.estado] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
   const handleSearch = (q: string) => {
     setSearchQuery(q);
     setVista('busqueda');
@@ -297,9 +303,9 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
           </div>
           <div className="flex gap-2">
             {[
-              { icon: <Clock className="w-3.5 h-3.5" />,        label: '3 en proceso',   color: 'text-blue-600 bg-blue-50 border-blue-100' },
-              { icon: <CheckCircle2 className="w-3.5 h-3.5" />, label: '12 completados', color: 'text-green-600 bg-green-50 border-green-100' },
-              { icon: <AlertTriangle className="w-3.5 h-3.5" />,label: '1 alerta',       color: 'text-red-600 bg-red-50 border-red-100' },
+              { icon: <Clock className="w-3.5 h-3.5" />,        label: `${conteo.en_proceso || 0} en proceso`,   color: 'text-blue-600 bg-blue-50 border-blue-100' },
+              { icon: <CheckCircle2 className="w-3.5 h-3.5" />, label: `${conteo.completado || 0} completados`,  color: 'text-green-600 bg-green-50 border-green-100' },
+              { icon: <AlertTriangle className="w-3.5 h-3.5" />,label: `${conteo.alerta || 0} alerta${(conteo.alerta || 0) === 1 ? '' : 's'}`, color: 'text-red-600 bg-red-50 border-red-100' },
             ].map(({ icon, label, color }) => (
               <div key={label} className={`flex items-center gap-1.5 text-xs border rounded-lg px-3 py-1.5 ${color}`}>
                 {icon} {label}
