@@ -48,6 +48,44 @@ const MESES: Record<string, string> = {
 };
 
 /** Intenta extraer RUT, fecha de nacimiento y otros datos del texto crudo del OCR */
+/** Convierte "GONZALEZ" -> "Gonzalez" (capitaliza, sin adivinar tildes) */
+function capitalizar(palabra: string): string {
+  if (!palabra) return '';
+  return palabra.charAt(0).toUpperCase() + palabra.slice(1).toLowerCase();
+}
+
+/* Etiquetas que suelen aparecer en una cédula/pasaporte, para no confundirlas
+   con el valor real cuando se busca la línea siguiente a "NOMBRES"/"APELLIDOS" */
+const ETIQUETAS_CONOCIDAS = [
+  'REPUBLICA', 'CHILE', 'CEDULA', 'IDENTIDAD', 'NACIONALIDAD', 'SEXO',
+  'FECHA', 'NACIMIENTO', 'VENCIMIENTO', 'DOCUMENTO', 'RUN', 'RUT',
+  'APELLIDOS', 'APELLIDO', 'NOMBRES', 'NOMBRE', 'FIRMA', 'PASAPORTE',
+];
+
+/** Busca el valor asociado a una etiqueta (ej. "NOMBRES"): en la misma línea
+    tras la etiqueta, o si no, en la línea inmediatamente siguiente. */
+function buscarValorTrasEtiqueta(lineas: string[], lineasUpper: string[], etiquetas: string[]): string {
+  for (let i = 0; i < lineasUpper.length; i++) {
+    const linea = lineasUpper[i];
+    const etqEncontrada = etiquetas.find(e => linea.includes(e));
+    if (!etqEncontrada) continue;
+
+    const idx = linea.indexOf(etqEncontrada);
+    const restoMismaLinea = lineas[i].slice(idx + etqEncontrada.length).replace(/^[:\-\s]+/, '').trim();
+    if (restoMismaLinea.length >= 2 && /[A-ZÁÉÍÓÚÑ]/i.test(restoMismaLinea)) {
+      return restoMismaLinea;
+    }
+
+    const siguiente = lineas[i + 1];
+    const siguienteUpper = lineasUpper[i + 1];
+    if (siguiente && siguienteUpper && !ETIQUETAS_CONOCIDAS.some(e => siguienteUpper.includes(e))) {
+      return siguiente;
+    }
+  }
+  return '';
+}
+
+/** Intenta extraer RUT, fecha de nacimiento, nombre y apellidos del texto crudo del OCR */
 function parsearTexto(textoCrudo: string): DatosEscaneados {
   const texto = textoCrudo.toUpperCase();
   const datos: DatosEscaneados = { ...VACIO };
@@ -58,14 +96,12 @@ function parsearTexto(textoCrudo: string): DatosEscaneados {
     datos.tipoDoc = 'rut';
     datos.documento = rut[1].replace(/\s/g, '').replace('–', '-');
   } else {
-    // Fallback: patrón típico de N° de pasaporte (letras + dígitos)
     const pas = texto.match(/\b([A-Z]{1,2}\d{6,8})\b/);
     if (pas) { datos.tipoDoc = 'pasaporte'; datos.documento = pas[1]; }
   }
 
   // Fecha numérica DD-MM-AAAA / DD/MM/AAAA
   const fechaNum = texto.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})\b/);
-  // Fecha con mes en texto, ej "15 MAR 1985"
   const fechaMes = texto.match(/\b(\d{1,2})\s+([A-Z]{3,4})\.?\s+(\d{4})\b/);
 
   if (fechaNum) {
@@ -77,10 +113,26 @@ function parsearTexto(textoCrudo: string): DatosEscaneados {
     if (mes) datos.fechaNacimiento = `${y}-${mes}-${d.padStart(2, '0')}`;
   }
 
-  // Nacionalidad: si el texto no menciona claramente Chile y parece pasaporte,
-  // se deja en blanco para que la persona la complete.
   if (!/CHILE/.test(texto) && datos.tipoDoc === 'pasaporte') {
     datos.nacionalidad = '';
+  }
+
+  // ── Nombre y apellidos: buscar las etiquetas de la cédula chilena ──
+  const lineas = textoCrudo.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const lineasUpper = lineas.map(l => l.toUpperCase());
+
+  const apellidosTxt = buscarValorTrasEtiqueta(lineas, lineasUpper, ['APELLIDOS', 'APELLIDO']);
+  const nombresTxt   = buscarValorTrasEtiqueta(lineas, lineasUpper, ['NOMBRES', 'NOMBRE']);
+
+  if (apellidosTxt) {
+    const partes = apellidosTxt.split(/\s+/).filter(p => /^[A-ZÁÉÍÓÚÑ]+$/i.test(p));
+    if (partes[0]) datos.apellidoPaterno = capitalizar(partes[0]);
+    if (partes[1]) datos.apellidoMaterno = capitalizar(partes[1]);
+  }
+  if (nombresTxt) {
+    const partes = nombresTxt.split(/\s+/).filter(p => /^[A-ZÁÉÍÓÚÑ]+$/i.test(p));
+    if (partes[0]) datos.primerNombre = capitalizar(partes[0]);
+    if (partes[1]) datos.segundoNombre = capitalizar(partes[1]);
   }
 
   return datos;
