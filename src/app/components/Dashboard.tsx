@@ -28,12 +28,14 @@ import { ImportadorExportador }    from './ImportadorExportador';
 import { EstadisticasCOMEX }       from './EstadisticasCOMEX';
 import { SearchResults }           from './SearchResults';
 import { VerTodos }                from './VerTodos';
+import { TodaActividad }           from './TodaActividad';
 import { CentroAyuda }             from './CentroAyuda';
 
 type Vista =
   | 'dashboard'
   | 'busqueda'
   | 'ver-todos'
+  | 'mis-tramites'
   | 'centro-ayuda'
   | 'turista'
   | 'importaciones'
@@ -188,6 +190,7 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
   if (vista === 'actividad-detalle')    return <ActividadDetalle numero={actividadNumero} rut={rut} onVolver={volver} />;
   if (vista === 'busqueda')            return <SearchResults query={searchQuery} rut={rut} onVolver={volver} />;
   if (vista === 'ver-todos')           return <VerTodos                rut={rut} onVolver={volver} onSeleccionar={(v) => ir(v as Vista)} />;
+  if (vista === 'mis-tramites')        return <TodaActividad           rut={rut} actividad={actividadCombinada} onVerDetalle={(n) => { setActividadNumero(n); ir('actividad-detalle'); }} onVolver={volver} />;
   if (vista === 'centro-ayuda')        return <CentroAyuda             rut={rut} onVolver={volver} />;
 
   /* ── Dashboard ── */
@@ -392,7 +395,7 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
                   );
                 })}
               </div>
-              <button onClick={() => ir('ver-todos')} className="mt-3 w-full text-xs text-[#1a5276] hover:underline flex items-center justify-center gap-1">
+              <button onClick={() => ir('mis-tramites')} className="mt-3 w-full text-xs text-[#1a5276] hover:underline flex items-center justify-center gap-1">
                 Ver todos los trámites <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </section>
