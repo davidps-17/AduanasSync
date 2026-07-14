@@ -67,6 +67,14 @@ const actividad = [
   { num: 'EXP-2026-00187', tipo: 'Exportación',          estado: 'completado' as EstadoKey, fecha: '06/06' },
   { num: 'DEC-2026-00892', tipo: 'Declaración aduanera', estado: 'alerta'     as EstadoKey, fecha: '08/06' },
   { num: 'PAG-2026-00054', tipo: 'Pago aranceles',       estado: 'pendiente'  as EstadoKey, fecha: '09/06' },
+  { num: 'PER-2026-00312', tipo: 'Permiso sanitario',    estado: 'en_proceso' as EstadoKey, fecha: '05/06' },
+  { num: 'MAE-2026-00178', tipo: 'Manifiesto aéreo',     estado: 'completado' as EstadoKey, fecha: '04/06' },
+  { num: 'MAR-2026-00095', tipo: 'Manifiesto marítimo',  estado: 'en_proceso' as EstadoKey, fecha: '03/06' },
+  { num: 'TRA-2026-00061', tipo: 'Tránsito aduanero',    estado: 'alerta'     as EstadoKey, fecha: '02/06' },
+  { num: 'OPC-2026-00047', tipo: 'Operador de comercio', estado: 'completado' as EstadoKey, fecha: '01/06' },
+  { num: 'TUR-2026-00583', tipo: 'Declaración de Turista', estado: 'completado' as EstadoKey, fecha: '30/05' },
+  { num: 'PAG-2026-00039', tipo: 'Pago aranceles',       estado: 'pendiente'  as EstadoKey, fecha: '29/05' },
+  { num: 'IMP-2026-00398', tipo: 'Importación',          estado: 'completado' as EstadoKey, fecha: '27/05' },
 ];
 
 const navLinks = ['Normativas', 'Acuerdos y Tratados', 'Importador Exportador', 'Estadísticas COMEX', 'Trámites en Línea', 'Aduana Informa', 'Subastas', 'Centro de Ayuda'];
@@ -364,7 +372,7 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
             <section className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm p-5">
               <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4">Actividad Reciente</p>
               <div className="space-y-2">
-                {actividadCombinada.map(a => {
+                {actividadCombinada.slice(0, 10).map(a => {
                   const cfg = estadoConfig[a.estado];
                   return (
                     <button key={a.num}
