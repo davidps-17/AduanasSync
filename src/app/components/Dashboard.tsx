@@ -392,7 +392,7 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
                   );
                 })}
               </div>
-              <button className="mt-3 w-full text-xs text-[#1a5276] hover:underline flex items-center justify-center gap-1">
+              <button onClick={() => ir('ver-todos')} className="mt-3 w-full text-xs text-[#1a5276] hover:underline flex items-center justify-center gap-1">
                 Ver todos los trámites <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </section>
