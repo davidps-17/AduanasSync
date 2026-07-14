@@ -1,13 +1,17 @@
 /**
  * DocumentScanner — Escáner de documento de identidad mediante cámara.
- * Simula captura + OCR extrayendo datos del documento.
- * Compatible con: desktop, mobile, tablet y tótems de autoservicio.
+ * Usa Tesseract.js (OCR real, corre en el navegador, sin backend) para leer
+ * el texto de la foto capturada, e intenta extraer RUT/fecha de nacimiento
+ * mediante patrones. El resultado queda en campos EDITABLES para que la
+ * persona corrija lo que el OCR no haya leído bien (los carnets chilenos
+ * tienen texto pequeño y fondo con diseño, así que no siempre es perfecto).
  *
  * Estados visuales:
  *  🟢 "Documento validado mediante escaneo"
  *  🟡 "Datos ingresados manualmente"
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { createWorker } from 'tesseract.js';
 import { Camera, X, ScanLine, CheckCircle2, AlertCircle, RotateCcw, Loader2, Scan } from 'lucide-react';
 
 export type ScanStatus = 'manual' | 'scanned' | 'none';
@@ -32,12 +36,55 @@ interface Props {
 
 type Step = 'idle' | 'camera' | 'processing' | 'review' | 'error';
 
-/* Datos OCR simulados (en producción vendría de un servicio de OCR real) */
-const MOCK_SCANS: DatosEscaneados[] = [
-  { primerNombre: 'María', segundoNombre: 'Gabriela', apellidoPaterno: 'González', apellidoMaterno: 'Pérez', tipoDoc: 'rut', documento: '12.345.678-5', fechaNacimiento: '1985-03-15', nacionalidad: 'Chile', fechaVencimiento: '2028-12-31' },
-  { primerNombre: 'Carlos', segundoNombre: '', apellidoPaterno: 'Rodríguez', apellidoMaterno: 'Fuentes', tipoDoc: 'rut', documento: '15.678.901-7', fechaNacimiento: '1990-07-22', nacionalidad: 'Chile' },
-  { primerNombre: 'Ana', segundoNombre: 'Lucía', apellidoPaterno: 'Martínez', apellidoMaterno: 'Silva', tipoDoc: 'pasaporte', documento: 'AA987654', fechaNacimiento: '1978-11-08', nacionalidad: 'Argentina' },
-];
+const VACIO: DatosEscaneados = {
+  primerNombre: '', segundoNombre: '', apellidoPaterno: '', apellidoMaterno: '',
+  tipoDoc: 'rut', documento: '', fechaNacimiento: '', nacionalidad: 'Chile',
+};
+
+/* Meses en español para fechas tipo "15 MAR 1985" en cédulas chilenas */
+const MESES: Record<string, string> = {
+  ENE: '01', FEB: '02', MAR: '03', ABR: '04', MAY: '05', JUN: '06',
+  JUL: '07', AGO: '08', SEP: '09', SET: '09', OCT: '10', NOV: '11', DIC: '12',
+};
+
+/** Intenta extraer RUT, fecha de nacimiento y otros datos del texto crudo del OCR */
+function parsearTexto(textoCrudo: string): DatosEscaneados {
+  const texto = textoCrudo.toUpperCase();
+  const datos: DatosEscaneados = { ...VACIO };
+
+  // RUT chileno: 1-2 dígitos, puntos opcionales, guion, dígito verificador (0-9 o K)
+  const rut = texto.match(/\b(\d{1,2}\.?\d{3}\.?\d{3}[-–]\s?[\dK])\b/);
+  if (rut) {
+    datos.tipoDoc = 'rut';
+    datos.documento = rut[1].replace(/\s/g, '').replace('–', '-');
+  } else {
+    // Fallback: patrón típico de N° de pasaporte (letras + dígitos)
+    const pas = texto.match(/\b([A-Z]{1,2}\d{6,8})\b/);
+    if (pas) { datos.tipoDoc = 'pasaporte'; datos.documento = pas[1]; }
+  }
+
+  // Fecha numérica DD-MM-AAAA / DD/MM/AAAA
+  const fechaNum = texto.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})\b/);
+  // Fecha con mes en texto, ej "15 MAR 1985"
+  const fechaMes = texto.match(/\b(\d{1,2})\s+([A-Z]{3,4})\.?\s+(\d{4})\b/);
+
+  if (fechaNum) {
+    const [, d, m, y] = fechaNum;
+    datos.fechaNacimiento = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  } else if (fechaMes) {
+    const [, d, mesTxt, y] = fechaMes;
+    const mes = MESES[mesTxt.slice(0, 3)];
+    if (mes) datos.fechaNacimiento = `${y}-${mes}-${d.padStart(2, '0')}`;
+  }
+
+  // Nacionalidad: si el texto no menciona claramente Chile y parece pasaporte,
+  // se deja en blanco para que la persona la complete.
+  if (!/CHILE/.test(texto) && datos.tipoDoc === 'pasaporte') {
+    datos.nacionalidad = '';
+  }
+
+  return datos;
+}
 
 export function DocumentScanner({ onScan, scanStatus, disabled }: Props) {
   const [step, setStep]             = useState<Step>('idle');
@@ -45,29 +92,38 @@ export function DocumentScanner({ onScan, scanStatus, disabled }: Props) {
   const [preview, setPreview]       = useState<string | null>(null);
   const [resultado, setResultado]   = useState<DatosEscaneados | null>(null);
   const [progress, setProgress]     = useState(0);
+  const [ocrError, setOcrError]     = useState('');
+  const [camaraLista, setCamaraLista] = useState(false);
   const videoRef  = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  /* Iniciar cámara */
+  /* Iniciar cámara: solo pide el stream y cambia de paso.
+     El stream se conecta al <video> en el useEffect de abajo,
+     una vez que el elemento ya está montado en el DOM. */
   const startCamera = useCallback(async () => {
     try {
+      setCamaraLista(false);
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-      setStep('camera');
       setHasCamera(true);
+      setStep('camera');
     } catch {
       setHasCamera(false);
       setStep('error');
     }
   }, []);
+
+  /* Conectar el stream al <video> apenas el paso 'camera' esté montado */
+  useEffect(() => {
+    if (step === 'camera' && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [step]);
 
   /* Detener cámara */
   const stopCamera = useCallback(() => {
@@ -82,6 +138,8 @@ export function DocumentScanner({ onScan, scanStatus, disabled }: Props) {
     setPreview(null);
     setResultado(null);
     setProgress(0);
+    setOcrError('');
+    setCamaraLista(false);
   }, [stopCamera]);
 
   useEffect(() => () => stopCamera(), [stopCamera]);
@@ -90,37 +148,86 @@ export function DocumentScanner({ onScan, scanStatus, disabled }: Props) {
   const capturar = () => {
     if (!videoRef.current || !canvasRef.current) return;
     const v = videoRef.current;
+    if (!v.videoWidth || !v.videoHeight) {
+      // La cámara aún no tiene un frame real listo — evita capturar una imagen negra/vacía
+      return;
+    }
     const c = canvasRef.current;
     c.width  = v.videoWidth;
     c.height = v.videoHeight;
-    c.getContext('2d')?.drawImage(v, 0, 0);
-    setPreview(c.toDataURL('image/jpeg', 0.85));
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(v, 0, 0);
+
+    // Vista previa: el frame completo, tal cual lo ve la persona
+    const previewUrl = c.toDataURL('image/jpeg', 0.92);
+    setPreview(previewUrl);
     stopCamera();
     setStep('processing');
-    simularOCR();
+
+    // Para el OCR: recortar solo la zona del marco guía (mismo 80%x60% centrado
+    // que se muestra en pantalla) para no confundir al lector con el fondo del
+    // carnet/mesa, y aplicar escala de grises + contraste sobre ese recorte.
+    const cw = Math.round(c.width * 0.8);
+    const ch = Math.round(c.height * 0.6);
+    const cx = Math.round((c.width - cw) / 2);
+    const cy = Math.round((c.height - ch) / 2);
+
+    const recorte = document.createElement('canvas');
+    recorte.width = cw;
+    recorte.height = ch;
+    const rctx = recorte.getContext('2d');
+    if (!rctx) { procesarOCR(previewUrl); return; }
+    rctx.drawImage(c, cx, cy, cw, ch, 0, 0, cw, ch);
+
+    const frame = rctx.getImageData(0, 0, cw, ch);
+    const px = frame.data;
+    const contraste = 1.35;
+    for (let i = 0; i < px.length; i += 4) {
+      const gris = px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114;
+      const ajustado = Math.min(255, Math.max(0, (gris - 128) * contraste + 128));
+      px[i] = px[i + 1] = px[i + 2] = ajustado;
+    }
+    rctx.putImageData(frame, 0, 0);
+
+    const ocrUrl = recorte.toDataURL('image/jpeg', 0.95);
+    procesarOCR(ocrUrl);
   };
 
-  /* Simular procesamiento OCR (2.5 segundos con barra de progreso) */
-  const simularOCR = () => {
+  /* OCR real con Tesseract.js sobre la foto capturada */
+  const procesarOCR = async (imagen: string) => {
     setProgress(0);
-    const duracion = 2500;
-    const intervalo = 50;
-    let elapsed = 0;
-    const t = setInterval(() => {
-      elapsed += intervalo;
-      setProgress(Math.min(100, Math.round((elapsed / duracion) * 100)));
-      if (elapsed >= duracion) {
-        clearInterval(t);
-        const datos = MOCK_SCANS[Math.floor(Math.random() * MOCK_SCANS.length)];
-        setResultado(datos);
-        setStep('review');
-      }
-    }, intervalo);
+    setOcrError('');
+    try {
+      const worker = await createWorker(['spa'], undefined, {
+        logger: (m) => {
+          if (m.status === 'recognizing text') {
+            setProgress(Math.round(m.progress * 100));
+          }
+        },
+      });
+      await worker.setParameters({ tessedit_pageseg_mode: '11' as any }); // PSM.SPARSE_TEXT: texto disperso, ideal para carnets
+      const { data } = await worker.recognize(imagen);
+      await worker.terminate();
+
+      const parseado = parsearTexto(data.text || '');
+      setResultado(parseado);
+      setStep('review');
+    } catch (e) {
+      setOcrError('No se pudo procesar la imagen. Intente con mejor luz o ingrese los datos manualmente.');
+      setResultado({ ...VACIO });
+      setStep('review');
+    }
   };
 
-  /* Confirmar datos escaneados */
+  /* Confirmar datos (ya revisados/corregidos) */
   const confirmar = () => {
     if (resultado) { onScan(resultado); cerrar(); }
+  };
+
+  /* Actualizar un campo del resultado durante la revisión */
+  const actualizarCampo = (campo: keyof DatosEscaneados, valor: string) => {
+    setResultado(r => r ? { ...r, [campo]: valor } : r);
   };
 
   /* Badge de estado de escaneo */
@@ -139,6 +246,17 @@ export function DocumentScanner({ onScan, scanStatus, disabled }: Props) {
     );
     return null;
   };
+
+  const campoInput = (label: string, campo: keyof DatosEscaneados) => (
+    <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3">
+      <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1 block">{label}</label>
+      <input
+        value={(resultado?.[campo] as string) ?? ''}
+        onChange={e => actualizarCampo(campo, e.target.value)}
+        className="w-full text-xs font-semibold text-gray-800 dark:text-gray-100 font-mono bg-transparent focus:outline-none border-b border-transparent focus:border-[#1a5276] dark:focus:border-blue-500"
+      />
+    </div>
+  );
 
   return (
     <>
@@ -174,8 +292,8 @@ export function DocumentScanner({ onScan, scanStatus, disabled }: Props) {
                 <h3 className="text-white font-bold flex items-center gap-2"><ScanLine className="w-5 h-5" /> Escáner de Documento</h3>
                 <p className="text-blue-200 text-xs mt-0.5">
                   {step === 'camera'     && 'Enfoque su documento y presione Capturar'}
-                  {step === 'processing' && 'Procesando imagen…'}
-                  {step === 'review'     && 'Verifique los datos extraídos'}
+                  {step === 'processing' && 'Leyendo texto con OCR…'}
+                  {step === 'review'     && 'Verifique y corrija los datos si es necesario'}
                   {step === 'error'      && 'Cámara no disponible'}
                 </p>
               </div>
@@ -190,8 +308,13 @@ export function DocumentScanner({ onScan, scanStatus, disabled }: Props) {
               {step === 'camera' && (
                 <div className="space-y-4">
                   <div className="relative rounded-2xl overflow-hidden bg-black aspect-video">
-                    <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+                    <video ref={videoRef} onLoadedMetadata={() => setCamaraLista(true)} className="w-full h-full object-cover" playsInline muted />
                     <canvas ref={canvasRef} className="hidden" />
+                    {!camaraLista && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                        <Loader2 className="w-8 h-8 text-white animate-spin" />
+                      </div>
+                    )}
                     {/* Marco de escáner */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                       <div className="relative w-4/5 h-3/5">
@@ -207,16 +330,16 @@ export function DocumentScanner({ onScan, scanStatus, disabled }: Props) {
                     <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse 80% 60% at 50% 50%, transparent 60%, rgba(0,0,0,0.5) 100%)' }} />
                   </div>
                   <p className="text-center text-xs text-gray-500 dark:text-gray-400">
-                    Coloque el documento dentro del marco · Pasaporte o Cédula de Identidad
+                    Coloque el documento dentro del marco, bien iluminado y enfocado · Cédula o Pasaporte
                   </p>
-                  <button type="button" onClick={capturar}
-                    className="w-full bg-[#1a5276] text-white py-4 rounded-2xl font-bold text-base hover:bg-[#143d5a] transition-colors flex items-center justify-center gap-3 min-h-[56px]">
-                    <Camera className="w-6 h-6" /> Capturar
+                  <button type="button" onClick={capturar} disabled={!camaraLista}
+                    className="w-full bg-[#1a5276] text-white py-4 rounded-2xl font-bold text-base hover:bg-[#143d5a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-3 min-h-[56px]">
+                    <Camera className="w-6 h-6" /> {camaraLista ? 'Capturar' : 'Iniciando cámara…'}
                   </button>
                 </div>
               )}
 
-              {/* ── Procesando OCR ── */}
+              {/* ── Procesando OCR real ── */}
               {step === 'processing' && (
                 <div className="space-y-5 py-4">
                   {preview && (
@@ -227,7 +350,7 @@ export function DocumentScanner({ onScan, scanStatus, disabled }: Props) {
                   <div className="text-center space-y-3">
                     <Loader2 className="w-10 h-10 text-[#1a5276] dark:text-blue-400 animate-spin mx-auto" />
                     <p className="text-gray-700 dark:text-gray-200 font-semibold">Analizando documento con OCR…</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500">Extrayendo nombres, fechas y número de documento</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">Extrayendo RUT, fecha y nombre desde la imagen</p>
                   </div>
                   <div>
                     <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -238,13 +361,20 @@ export function DocumentScanner({ onScan, scanStatus, disabled }: Props) {
                 </div>
               )}
 
-              {/* ── Revisión de datos extraídos ── */}
+              {/* ── Revisión de datos extraídos (editables) ── */}
               {step === 'review' && resultado && (
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-xl p-3">
-                    <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-                    <p className="text-sm text-green-700 dark:text-green-400 font-medium">Documento leído correctamente. Verifique los datos antes de confirmar.</p>
-                  </div>
+                  {ocrError ? (
+                    <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+                      <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                      <p className="text-sm text-amber-700 dark:text-amber-400 font-medium">{ocrError}</p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-xl p-3">
+                      <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+                      <p className="text-sm text-green-700 dark:text-green-400 font-medium">Imagen procesada. Revise y corrija los campos antes de confirmar.</p>
+                    </div>
+                  )}
 
                   {preview && (
                     <div className="rounded-xl overflow-hidden h-28">
@@ -253,23 +383,29 @@ export function DocumentScanner({ onScan, scanStatus, disabled }: Props) {
                   )}
 
                   <div className="grid grid-cols-2 gap-2">
-                    {[
-                      ['Primer nombre',    resultado.primerNombre],
-                      ['Segundo nombre',   resultado.segundoNombre || '—'],
-                      ['Apellido paterno', resultado.apellidoPaterno],
-                      ['Apellido materno', resultado.apellidoMaterno],
-                      ['Tipo documento',   resultado.tipoDoc === 'rut' ? 'RUT' : 'Pasaporte'],
-                      ['N° Documento',     resultado.documento],
-                      ['F. Nacimiento',    resultado.fechaNacimiento],
-                      ['Nacionalidad',     resultado.nacionalidad],
-                      ...(resultado.fechaVencimiento ? [['Vencimiento', resultado.fechaVencimiento]] as [string,string][] : []),
-                    ].map(([k, v]) => (
-                      <div key={k} className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3">
-                        <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-0.5">{k}</p>
-                        <p className="text-xs font-semibold text-gray-800 dark:text-gray-100 font-mono">{v}</p>
-                      </div>
-                    ))}
+                    {campoInput('Primer nombre', 'primerNombre')}
+                    {campoInput('Segundo nombre', 'segundoNombre')}
+                    {campoInput('Apellido paterno', 'apellidoPaterno')}
+                    {campoInput('Apellido materno', 'apellidoMaterno')}
+                    <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3">
+                      <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1 block">Tipo documento</label>
+                      <select
+                        value={resultado.tipoDoc}
+                        onChange={e => actualizarCampo('tipoDoc', e.target.value)}
+                        className="w-full text-xs font-semibold text-gray-800 dark:text-gray-100 bg-transparent focus:outline-none"
+                      >
+                        <option value="rut">RUT</option>
+                        <option value="pasaporte">Pasaporte</option>
+                      </select>
+                    </div>
+                    {campoInput('N° Documento', 'documento')}
+                    {campoInput('F. Nacimiento (AAAA-MM-DD)', 'fechaNacimiento')}
+                    {campoInput('Nacionalidad', 'nacionalidad')}
                   </div>
+
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500 text-center">
+                    El OCR puede no leer todo con exactitud — corrija cualquier campo tocándolo antes de confirmar.
+                  </p>
 
                   <div className="flex gap-3 pt-1">
                     <button type="button" onClick={() => { setStep('camera'); setPreview(null); startCamera(); }}
