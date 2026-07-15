@@ -201,7 +201,7 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
 
   /* ── Dashboard ── */
   return (
-    <div className={`min-h-screen bg-[#f5f6f8] dark:bg-gray-950 transition-colors ${kiosk ? 'kiosk-mode' : ''}`}>
+    <div className={`min-h-screen w-full overflow-x-hidden bg-[#f5f6f8] dark:bg-gray-950 transition-colors ${kiosk ? 'kiosk-mode' : ''}`}>
 
       {/* ── Banner inactividad (modo tótem) ── */}
       {kiosk && inactividad <= 60 && (
@@ -217,7 +217,7 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
       {/* Navbar */}
       <header className="bg-[#1a5276] dark:bg-[#0f2030] sticky top-0 z-20 transition-colors">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="flex items-center gap-6 h-14">
+          <div className="flex items-center gap-3 sm:gap-6 h-14 min-w-0">
             <div className="flex items-center gap-2.5 flex-shrink-0">
               <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
                 <Building2 className="w-4 h-4 text-white" />
@@ -229,7 +229,7 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
             </div>
 
             {/* Buscador */}
-            <form className="flex-1 max-w-md" onSubmit={e => { e.preventDefault(); handleSearch(inputVal); }}>
+            <form className="flex-1 min-w-0 max-w-md" onSubmit={e => { e.preventDefault(); handleSearch(inputVal); }}>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-blue-300" />
                 <input

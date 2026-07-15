@@ -1,9 +1,9 @@
 /* ══════════════════════════════════════════════════
    Store compartido de trámites
-   Sin backend: usa localStorage para que un trámite
-   enviado en cualquier formulario (Turista, Importación,
-   etc.) aparezca de inmediato en "Actividad Reciente"
-   del Dashboard y en su propio detalle.
+   Sin backend: guarda los trámites en MEMORIA (no localStorage),
+   así aparecen de inmediato en "Actividad Reciente" del Dashboard
+   y en su propio detalle, pero se borran solos al recargar la página
+   (comportamiento intencional: es solo para la sesión actual).
 ══════════════════════════════════════════════════ */
 
 export type EstadoTramite = 'en_proceso' | 'completado' | 'alerta' | 'pendiente';
@@ -32,42 +32,26 @@ export interface TramiteGuardado {
   rut: string;
 }
 
-const KEY = 'aduanasync_tramites_v1';
 export const EVENTO_ACTUALIZACION = 'aduanasync-tramites-actualizados';
 
-function leerTodos(): TramiteGuardado[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function escribirTodos(tramites: TramiteGuardado[]) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(tramites));
-    window.dispatchEvent(new Event(EVENTO_ACTUALIZACION));
-  } catch {
-    /* localStorage no disponible (modo privado, etc.) — se pierde el historial silenciosamente */
-  }
-}
+/* Array en memoria: vive mientras la pestaña esté abierta y se reinicia
+   solo (vacío) cada vez que se recarga la página. */
+let _tramites: TramiteGuardado[] = [];
 
 /** Guarda un trámite nuevo, más reciente primero */
 export function guardarTramite(t: TramiteGuardado): void {
-  const todos = leerTodos();
-  escribirTodos([t, ...todos]);
+  _tramites = [t, ..._tramites];
+  window.dispatchEvent(new Event(EVENTO_ACTUALIZACION));
 }
 
 /** Lista todos los trámites guardados, opcionalmente filtrados por RUT */
 export function listarTramites(rut?: string): TramiteGuardado[] {
-  const todos = leerTodos();
-  return rut ? todos.filter(t => t.rut === rut) : todos;
+  return rut ? _tramites.filter(t => t.rut === rut) : _tramites;
 }
 
 /** Busca un trámite por su número de folio */
 export function obtenerTramite(numero: string): TramiteGuardado | null {
-  return leerTodos().find(t => t.numero === numero) ?? null;
+  return _tramites.find(t => t.numero === numero) ?? null;
 }
 
 /** Formatea una fecha YYYY-MM-DD como "Hoy" / "Ayer" / "DD/MM" para listados cortos */
