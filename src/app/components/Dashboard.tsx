@@ -294,14 +294,14 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
 
         {/* Bienvenida */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-gray-800 dark:text-gray-100 font-bold">Portal Aduanero</h1>
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 capitalize">
               {new Date().toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {[
               { icon: <Clock className="w-3.5 h-3.5" />,        label: `${conteo.en_proceso || 0} en proceso`,   color: 'text-blue-600 bg-blue-50 border-blue-100' },
               { icon: <CheckCircle2 className="w-3.5 h-3.5" />, label: `${conteo.completado || 0} completados`,  color: 'text-green-600 bg-green-50 border-green-100' },
