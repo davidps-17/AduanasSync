@@ -241,7 +241,7 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
               </div>
             </form>
 
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex-shrink-0 flex items-center gap-1 sm:gap-2">
               {/* Modo Tótem */}
               <button onClick={toggleKiosk} title={kiosk ? 'Salir del modo tótem' : 'Activar modo tótem'}
                 className={`p-2 rounded-lg transition-colors flex items-center gap-1.5 text-xs ${kiosk ? 'bg-green-500/20 text-green-300' : 'hover:bg-white/15 text-white'}`}>
@@ -270,8 +270,8 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
                 <p className="text-white text-xs font-medium">RUT {rut}</p>
                 <p className="text-blue-300 text-[10px]">Sesión activa</p>
               </div>
-              <button onClick={onLogout} className="flex items-center gap-1.5 text-xs text-white bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg transition-colors">
-                <LogOut className="w-3.5 h-3.5" /> Salir
+              <button onClick={onLogout} title="Salir" className="flex-shrink-0 flex items-center gap-1.5 text-xs text-white bg-white/15 hover:bg-white/25 px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors">
+                <LogOut className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Salir</span>
               </button>
             </div>
           </div>
