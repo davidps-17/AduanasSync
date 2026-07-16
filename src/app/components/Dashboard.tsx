@@ -87,6 +87,7 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
   const [vista, setVista]       = useState<Vista>('dashboard');
   const [navActivo, setNavActivo] = useState('Trámites en Línea');
   const [searchQuery, setSearchQuery] = useState('');
+  const [busquedaMovilAbierta, setBusquedaMovilAbierta] = useState(false);
   const [inputVal, setInputVal] = useState('');
   const [actividadNumero, setActividadNumero] = useState('');
   const { isDark, toggle: toggleTheme } = useTheme();
@@ -228,8 +229,8 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
               </div>
             </div>
 
-            {/* Buscador */}
-            <form className="flex-1 min-w-0 max-w-md" onSubmit={e => { e.preventDefault(); handleSearch(inputVal); }}>
+            {/* Buscador (visible siempre desde tablet/desktop en adelante) */}
+            <form className="hidden sm:block flex-1 min-w-0 max-w-md" onSubmit={e => { e.preventDefault(); handleSearch(inputVal); }}>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-blue-300" />
                 <input
@@ -242,6 +243,12 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
             </form>
 
             <div className="ml-auto flex-shrink-0 flex items-center gap-1 sm:gap-2">
+              {/* Lupa: solo en móvil, abre la fila de búsqueda debajo del header */}
+              <button onClick={() => setBusquedaMovilAbierta(v => !v)} title="Buscar"
+                className={`sm:hidden p-2 rounded-lg transition-colors ${busquedaMovilAbierta ? 'bg-white/20 text-white' : 'hover:bg-white/15 text-white'}`}>
+                <Search className="w-4 h-4" />
+              </button>
+
               {/* Modo Tótem */}
               <button onClick={toggleKiosk} title={kiosk ? 'Salir del modo tótem' : 'Activar modo tótem'}
                 className={`p-2 rounded-lg transition-colors flex items-center gap-1.5 text-xs ${kiosk ? 'bg-green-500/20 text-green-300' : 'hover:bg-white/15 text-white'}`}>
@@ -276,6 +283,22 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
             </div>
           </div>
         </div>
+
+        {/* Buscador expandible — solo móvil */}
+        {busquedaMovilAbierta && (
+          <div className="sm:hidden px-4 pb-3">
+            <form className="relative" onSubmit={e => { e.preventDefault(); handleSearch(inputVal); setBusquedaMovilAbierta(false); }}>
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-blue-300" />
+              <input
+                autoFocus
+                value={inputVal}
+                onChange={e => setInputVal(e.target.value)}
+                placeholder="Busca aquí la información que necesitas…"
+                className="w-full bg-white/10 text-white placeholder-blue-300 text-xs rounded-lg pl-9 pr-4 py-2 focus:outline-none focus:bg-white/20 transition-colors"
+              />
+            </form>
+          </div>
+        )}
 
         {/* Nav secundario */}
         <div className="bg-[#143d5a]">
