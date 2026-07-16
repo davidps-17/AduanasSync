@@ -242,7 +242,7 @@ export function Dashboard({ rut, onLogout }: DashboardProps) {
               </div>
             </form>
 
-            <div className="ml-auto flex-shrink-0 flex items-center gap-1 sm:gap-2">
+            <div className="ml-auto flex-shrink-0 flex items-center gap-2">
               {/* Lupa: solo en móvil, abre la fila de búsqueda debajo del header */}
               <button onClick={() => setBusquedaMovilAbierta(v => !v)} title="Buscar"
                 className={`sm:hidden p-2 rounded-lg transition-colors ${busquedaMovilAbierta ? 'bg-white/20 text-white' : 'hover:bg-white/15 text-white'}`}>
